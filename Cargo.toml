@@ -1,0 +1,31 @@
+[package]
+name = "syswatch"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0"
+nvml-wrapper = "0.9"
+sysinfo = "0.28"
+thiserror = "1.0"
+clap = { version = "4.2.1", features = ["derive"] }
+users = "0.11"
+whitespace-conf = "1.0"
+humansize = "2.1"
+#libc = "0.2.141"
+procfs = "0.15"
+env_logger = "0.10"
+actix-web = "4"
+prometheus-client = "0.20"
+platform-info = "1.0.2"
+reqwest = "0.11.16"
+tokio = { version = "1.27", features = ["full"]}
+toml = "0.7.3"
+serde = { version = "1.0", features = ["derive"] }
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1
