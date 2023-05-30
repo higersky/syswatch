@@ -5,6 +5,7 @@ use std::path::Path;
 use users::os::unix::UserExt;
 use users::{uid_t, User};
 
+/// WARNING: this function should not be called concurrently
 fn get_users() -> (Vec<User>, Vec<User>) {
     let linux_logindefs = fs::read_to_string("/etc/login.defs")
         .expect("Cannot find /etc/login.defs. Your linux may be corrputed.");
@@ -28,6 +29,7 @@ fn get_users() -> (Vec<User>, Vec<User>) {
     //|| user.uid() == 0u32)
 }
 
+/// WARNING: this function should not be called concurrently
 pub fn get_users_map() -> (HashMap<uid_t, User>, HashMap<uid_t, User>) {
     let mut known_user_map: HashMap<uid_t, User> = HashMap::new();
     let mut blocked_user_map = HashMap::new();

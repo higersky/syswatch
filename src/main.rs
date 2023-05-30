@@ -67,6 +67,7 @@ struct AppReadOnlyConfig {
 fn main() -> Result<()> {
     let args = Args::parse();
 
+    tracing_subscriber::fmt::init();
     // env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
     let addr: SocketAddr = format!("{}:{}", args.address, args.port)
@@ -215,6 +216,11 @@ fn build_registry(metrics: &web::Data<metrics::Metrics>, alive_status: &web::Dat
         "node_nvidia_user_used_memory_bytes",
         "User utilization of NVIDIA GPU",
         metrics.users_used_memory.clone(),
+    );
+    registry.register(
+        "node_nvidia_user_cards",
+        "Count of GPUs used by a user",
+        metrics.users_used_cards.clone()
     );
     registry.register(
         "node_home_folder_size_bytes",
