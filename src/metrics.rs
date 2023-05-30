@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::nvml_metrics::{NvmlMetricsCollector, NvmlDevice, NvmlUserUtilization};
 use anyhow::Context;
 use prometheus_client::encoding::EncodeLabelSet;
@@ -80,6 +81,7 @@ pub struct Metrics {
     pub utilization_memory: Family<DeviceMinorLabel, Gauge<f64, AtomicU64>>,
     pub users_used_memory: Family<UserLabel, Gauge>,
     pub users_used_disk: Family<UserNameLabel, Gauge>,
+    pub users_used_cards: Family<UserNameLabel, Gauge>
 }
 
 #[derive(Default)]
@@ -106,14 +108,24 @@ impl Metrics {
 
         self.update_home_size();
 
-        for user in state.users_utilization {
-            self.update_nvml_user_utilization(user);
+        self.users_used_memory.clear();
+        let mut count = HashMap::new();
+        for user in state.users_utilization.iter() {
+            if user.used_gpu_memory != 0 {
+                count.entry(user.user_name.clone()).and_modify(|x: &mut i64| *x += 1).or_insert(1);
+                self.update_nvml_user_utilization(user);
+            }
+        }
+
+        self.users_used_cards.clear();
+        for (user_name, cnt) in count {
+            self.users_used_cards.get_or_create(&UserNameLabel{ user_name: user_name.clone() }).set(cnt);
         }
 
         Ok(())
     }
 
-    fn update_nvml_user_utilization(&self, user: NvmlUserUtilization) {
+    fn update_nvml_user_utilization(&self, user: &NvmlUserUtilization) {
         let ulabel = UserLabel {
             user_name: user.user_name.clone(),
             index: user.index,
