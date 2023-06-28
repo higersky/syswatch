@@ -101,7 +101,7 @@ impl NvmlMetricsCollector {
                 } else {
                     continue;
                 };
-                tracing::trace!("Nvml process pid = {}, uid = {}", proc.pid, uid);
+                // tracing::trace!("Nvml process pid = {}, uid = {}", proc.pid, uid);
                 let r = match proc_info.used_gpu_memory {
                     UsedGpuMemory::Used(u) => u,
                     UsedGpuMemory::Unavailable => 0,
@@ -113,7 +113,7 @@ impl NvmlMetricsCollector {
             // for user in self.known_user_map.values().chain(self.blocked_user_map.values()) {
             //     user_usage.entry(user.uid()).or_insert(0);
             // }
-            
+
             for (uid, _used) in user_usage.iter() {
                 if !self.known_user_map.contains_key(uid)
                     && !self.blocked_user_map.contains_key(uid)

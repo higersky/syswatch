@@ -1,10 +1,10 @@
-use std::collections::HashMap;
-use crate::nvml_metrics::{NvmlMetricsCollector, NvmlDevice, NvmlUserUtilization};
+use crate::nvml_metrics::{NvmlDevice, NvmlMetricsCollector, NvmlUserUtilization};
 use anyhow::Context;
 use prometheus_client::encoding::EncodeLabelSet;
 use prometheus_client::metrics::family::Family;
-use std::sync::atomic::AtomicU64;
 use serde::Deserialize;
+use std::collections::HashMap;
+use std::sync::atomic::AtomicU64;
 
 use anyhow::Result;
 
@@ -53,19 +53,19 @@ pub struct UserNameLabel {
 #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
 pub struct WatchdogLabel {
     pub hostname: String,
-    pub url: String
+    pub url: String,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct KeepAliveConfig {
     pub interval: u64,
-    pub item: Vec<KeepAliveItem>
+    pub item: Vec<KeepAliveItem>,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct KeepAliveItem {
     pub hostname: String,
-    pub url: String
+    pub url: String,
 }
 
 #[derive(Default)]
@@ -81,14 +81,13 @@ pub struct Metrics {
     pub utilization_memory: Family<DeviceMinorLabel, Gauge<f64, AtomicU64>>,
     pub users_used_memory: Family<UserLabel, Gauge>,
     pub users_used_disk: Family<UserNameLabel, Gauge>,
-    pub users_used_cards: Family<UserNameLabel, Gauge>
+    pub users_used_cards: Family<UserNameLabel, Gauge>,
 }
 
 #[derive(Default)]
 pub struct AliveStatus {
-    pub alive_status: Family<WatchdogLabel, Gauge>
+    pub alive_status: Family<WatchdogLabel, Gauge>,
 }
-
 
 impl Metrics {
     pub fn new() -> Metrics {
@@ -112,14 +111,21 @@ impl Metrics {
         let mut count = HashMap::new();
         for user in state.users_utilization.iter() {
             if user.used_gpu_memory != 0 {
-                count.entry(user.user_name.clone()).and_modify(|x: &mut i64| *x += 1).or_insert(1);
+                count
+                    .entry(user.user_name.clone())
+                    .and_modify(|x: &mut i64| *x += 1)
+                    .or_insert(1);
                 self.update_nvml_user_utilization(user);
             }
         }
 
         self.users_used_cards.clear();
         for (user_name, cnt) in count {
-            self.users_used_cards.get_or_create(&UserNameLabel{ user_name: user_name.clone() }).set(cnt);
+            self.users_used_cards
+                .get_or_create(&UserNameLabel {
+                    user_name: user_name.clone(),
+                })
+                .set(cnt);
         }
 
         Ok(())
@@ -136,11 +142,7 @@ impl Metrics {
     }
 
     fn update_nvml_version(&self, version: String) {
-        self.version
-            .get_or_create(&VersionLabel {
-                version,
-            })
-            .set(1);
+        self.version.get_or_create(&VersionLabel { version }).set(1);
     }
 
     fn update_home_size(&self) {
@@ -200,9 +202,13 @@ impl Metrics {
     }
 }
 
-
 impl AliveStatus {
     pub fn update(&self, item: &KeepAliveItem, status: bool) {
-        self.alive_status.get_or_create(&WatchdogLabel { hostname: item.hostname.clone(), url: item.url.clone() }).set(status as i64);
+        self.alive_status
+            .get_or_create(&WatchdogLabel {
+                hostname: item.hostname.clone(),
+                url: item.url.clone(),
+            })
+            .set(status as i64);
     }
 }
