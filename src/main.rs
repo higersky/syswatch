@@ -290,6 +290,7 @@ async fn metrics_handler(
 
     Ok(HttpResponse::Ok()
         .content_type("text/plain; version=0.0.4; charset=utf-8")
+        .insert_header(("Access-Control-Allow-Origin", "*"))
         .body(body))
 }
 
@@ -319,5 +320,8 @@ async fn upstream_handler(
 
 #[get("/status")]
 async fn status_handler() -> actix_web::Result<HttpResponse> {
-    Ok(HttpResponse::Ok().finish())
+    Ok(HttpResponse::Ok()
+        .content_type("text/plain")
+        .insert_header(("Access-Control-Allow-Origin", "*"))
+        .body("ok"))
 }
