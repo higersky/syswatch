@@ -7,8 +7,8 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0"
-nvml-wrapper = "0.9"
-sysinfo = "0.28"
+nvml-wrapper = { version = "0.9", features = ["legacy-functions"] }
+# sysinfo = "0.28"
 thiserror = "1.0"
 clap = { version = "4.2.1", features = ["derive"] }
 users = "0.11"
@@ -31,3 +31,18 @@ tracing-subscriber = "0.3"
 lto = true
 strip = true
 codegen-units = 1
+
+[package.metadata.deb]
+maintainer = "***REMOVED***"
+copyright = "2022, ***REMOVED***"
+extended-description = """A prometheus client which exposes real-time metrics of nvidia cards and disk usages."""
+depends = "prometheus-node-exporter"
+section = "utility"
+priority = "optional"
+assets = [
+    ["target/release/syswatch", "usr/local/bin/syswatch", "755"]
+]
+maintainer-scripts = "debian/"
+systemd-units = [
+    { unit-name = "prometheus-syswatch", enable = true }
+]

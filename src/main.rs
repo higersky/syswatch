@@ -262,6 +262,16 @@ async fn metrics_handler(
     http_client: web::Data<Client>,
     config: web::Data<AppReadOnlyConfig>,
 ) -> actix_web::Result<HttpResponse> {
+    let response: Option<_> = if config.upstream {
+        let response = http_client
+            .get(format!("http://127.0.0.1:{}/metrics", config.upstream_port))
+            .send();
+
+        Some(response)
+    } else {
+        None
+    };
+
     let mut body = {
         let mut state = state.lock().unwrap();
         metrics
@@ -272,12 +282,11 @@ async fn metrics_handler(
         body
     };
 
-    if config.upstream {
-        let response: reqwest::Response = http_client
-            .get(format!("http://127.0.0.1:{}/metrics", config.upstream_port))
-            .send()
+    if let Some(response) = response {
+        let response = response
             .await
             .http_internal_error("Failed to get upstream data")?;
+
         if response.error_for_status_ref().is_err() {
             return Ok(HttpResponse::InternalServerError().body("Failed to fetch upstream data"));
         }
