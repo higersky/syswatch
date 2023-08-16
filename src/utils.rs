@@ -2,11 +2,11 @@ use actix_web::http::StatusCode;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
+use std::sync::Mutex;
 use users::os::unix::UserExt;
 use users::{uid_t, User};
 
-/// SAFETY: this function should not be called concurrently
-unsafe fn get_users() -> (Vec<User>, Vec<User>) {
+fn get_users() -> (Vec<User>, Vec<User>) {
     let linux_logindefs = fs::read_to_string("/etc/login.defs")
         .expect("Cannot find /etc/login.defs. Your linux may be corrputed.");
     let linux_logindefs = whitespace_conf::parse(&linux_logindefs);
@@ -22,19 +22,25 @@ unsafe fn get_users() -> (Vec<User>, Vec<User>) {
         .unwrap();
 
     let nologin_path = Path::new("/sbin/nologin");
-    let users = unsafe { users::all_users() };
-    users
-        .into_iter()
-        .partition(|user| (uid_min..uid_max).contains(&user.uid()) && user.shell() != nologin_path)
+
+    // Critical section
+    static MUTEX: Mutex<bool> = Mutex::new(false);
+    {
+        let mut _data = MUTEX.lock().expect("Failed to get users");
+
+        let users = unsafe { users::all_users() };
+        users.into_iter().partition(|user| {
+            (uid_min..uid_max).contains(&user.uid()) && user.shell() != nologin_path
+        })
+    }
     //|| user.uid() == 0u32)
 }
 
-/// WARNING: this function should not be called concurrently
 pub fn get_users_map() -> (HashMap<uid_t, User>, HashMap<uid_t, User>) {
     let mut known_user_map: HashMap<uid_t, User> = HashMap::new();
     let mut blocked_user_map = HashMap::new();
 
-    let (known_users, blocked_users) = unsafe { get_users() };
+    let (known_users, blocked_users) = get_users();
     for user in known_users {
         known_user_map.entry(user.uid()).or_insert(user);
     }
