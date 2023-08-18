@@ -6,7 +6,7 @@ use actix_web::http::{StatusCode, Uri};
 use anyhow::{Context, Result};
 use clap::Parser;
 // use env_logger::Env;
-use reqwest::{Client, Url};
+use awc::Client;
 
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -74,56 +74,27 @@ fn main() -> Result<()> {
         .parse()
         .with_context(|| "Cannot parse listen address")?;
 
+    let keep_alive_config = read_keep_alive_config(&args)?;
+
     let collector = NvmlMetricsCollector::new(args.show_all_users)?;
     let metrics = web::Data::new(metrics::Metrics::new());
     let alive_status = web::Data::new(metrics::AliveStatus::default());
 
     let registry = build_registry(&metrics, &alive_status);
 
-    let keep_alive_config = if args.alive_check {
-        let keep_alive_config = std::fs::read_to_string(&args.alive_check_config)?;
-        let keep_alive_config: KeepAliveConfig = toml::from_str(&keep_alive_config)?;
-        if keep_alive_config.interval == 0 {
-            anyhow::bail!("Keep alive configuration error: interval should be larger than 0");
-        }
-        if keep_alive_config.item.is_empty() {
-            anyhow::bail!("Keep alive configuration error: no item found");
-        }
-        println!(
-            "Alive check is enabled. Interval = {} s\nMachine List:",
-            keep_alive_config.interval
-        );
-        for item in keep_alive_config.item.iter() {
-            let _uri: Uri = Uri::from_str(item.url.as_str()).with_context(|| {
-                format!(
-                    "Parsing alive check config {}",
-                    args.alive_check_config.to_string_lossy()
-                )
-            })?;
-            println!("- {}: {}", item.hostname, item.url);
-        }
-        Some(keep_alive_config)
-    } else {
-        None
-    };
-
-    let state = AppState {
+    let state = web::Data::new(Mutex::new(AppState {
         registry,
         collector,
-    };
+    }));
 
-    let state = web::Data::new(Mutex::new(state));
-
-    let config = AppReadOnlyConfig {
+    let config = web::Data::new(AppReadOnlyConfig {
         upstream: args.combine_with_upstream,
         upstream_port: args.upstream_port,
-    };
+    });
 
     if args.combine_with_upstream {
-        println!("Upstream port is set as {}", args.upstream_port);
+        println!("The upstream port is set as {}", args.upstream_port);
     }
-
-    let config = web::Data::new(config);
 
     println!(
         "Exporter service is starting at http://{}:{}/metrics",
@@ -133,34 +104,10 @@ fn main() -> Result<()> {
     actix_web::rt::System::new().block_on(async {
         if let Some(keep_alive_config) = keep_alive_config {
             actix_web::rt::spawn(async move {
-                let mut interval =
-                    actix_web::rt::time::interval(Duration::from_secs(keep_alive_config.interval));
-                let client = Client::builder()
-                    .build()
-                    .expect("Failed to send http request for alive checker");
-                let count = keep_alive_config.item.iter().count();
-
-                loop {
-                    for item in keep_alive_config.item.iter() {
-                        let client = &client;
-                        // FIXME: Find a method to send request concurrently
-                        // It seems reqwest doesn't support concurrent call for Client. If any Future fails, all futures before synchronization point will fail.
-                        let response = client
-                            .get(Url::parse(&item.url).expect("Illegal url"))
-                            .timeout(Duration::from_secs_f64(
-                                keep_alive_config.interval as f64 / count as f64,
-                            ))
-                            .send()
-                            .await;
-                        let status = response
-                            .and_then(|x| Ok(x.status().is_success()))
-                            .unwrap_or(false);
-                        alive_status.update(item, status)
-                    }
-                    interval.tick().await;
-                }
+                keep_alive_worker(keep_alive_config, alive_status).await
             });
         }
+
         HttpServer::new(move || {
             App::new()
                 .app_data(metrics.clone())
@@ -171,7 +118,7 @@ fn main() -> Result<()> {
                 .service(metrics_handler)
                 .service(status_handler)
         })
-        .workers(3)
+        .workers(2)
         .bind(addr)?
         .run()
         .await
@@ -272,29 +219,32 @@ async fn metrics_handler(
         None
     };
 
-    let mut body = {
+    let mut body: Vec<u8> = {
         let mut state = state.lock().unwrap();
         metrics
             .update(&mut state.collector)
             .http_error("metric update failed", StatusCode::INTERNAL_SERVER_ERROR)?;
         let mut body: String = String::new();
         encode(&mut body, &state.registry).unwrap();
-        body
+        body.into_bytes()
     };
 
     if let Some(response) = response {
-        let response = response
+        let mut response = response
             .await
             .http_internal_error("Failed to get upstream data")?;
 
-        if response.error_for_status_ref().is_err() {
+        if response.status().is_server_error() {
             return Ok(HttpResponse::InternalServerError().body("Failed to fetch upstream data"));
         }
-        body = response
-            .text()
-            .await
-            .http_internal_error("Failed to parse upstream data")?
-            + &body;
+        body = [
+            response
+                .body()
+                .await
+                .http_internal_error("Failed to parse upstream data")?,
+            body.into(),
+        ]
+        .concat();
     }
 
     Ok(HttpResponse::Ok()
@@ -312,7 +262,7 @@ async fn upstream_handler(
         return Ok(HttpResponse::NotFound().into());
     }
 
-    let response: reqwest::Response = http_client
+    let mut response = http_client
         .get(format!("http://127.0.0.1:{}", config.upstream_port))
         .send()
         .await
@@ -321,7 +271,7 @@ async fn upstream_handler(
         .content_type("text/html; charset=utf-8")
         .body(
             response
-                .text()
+                .body()
                 .await
                 .http_internal_error("Failed to get upstream data")?,
         ))
@@ -333,4 +283,69 @@ async fn status_handler() -> actix_web::Result<HttpResponse> {
         .content_type("text/plain")
         .insert_header(("Access-Control-Allow-Origin", "*"))
         .body("ok"))
+}
+
+fn read_keep_alive_config(args: &Args) -> Result<Option<KeepAliveConfig>, anyhow::Error> {
+    if args.alive_check {
+        let keep_alive_config = std::fs::read_to_string(&args.alive_check_config)?;
+        let keep_alive_config: KeepAliveConfig = toml::from_str(&keep_alive_config)?;
+        if keep_alive_config.interval == 0 {
+            anyhow::bail!("Keep alive configuration error: interval should be larger than 0");
+        }
+        if keep_alive_config.item.is_empty() {
+            anyhow::bail!("Keep alive configuration error: no item found");
+        }
+        println!(
+            "Alive check is enabled. Interval = {} s\nMachine List:",
+            keep_alive_config.interval
+        );
+        for item in keep_alive_config.item.iter() {
+            let _uri: Uri = Uri::from_str(item.url.as_str()).with_context(|| {
+                format!(
+                    "Parsing alive check config {}",
+                    args.alive_check_config.to_string_lossy()
+                )
+            })?;
+            println!("- {}: {}", item.hostname, item.url);
+        }
+        Ok(Some(keep_alive_config))
+    } else {
+        Ok(None)
+    }
+}
+
+async fn keep_alive_worker(
+    keep_alive_config: KeepAliveConfig,
+    alive_status: web::Data<metrics::AliveStatus>,
+) -> ! {
+    let mut interval =
+        actix_web::rt::time::interval(Duration::from_secs(keep_alive_config.interval));
+    let client = Client::new();
+    let count = keep_alive_config.item.iter().count();
+
+    loop {
+        let mut futures = Vec::new();
+        for item in keep_alive_config.item.iter() {
+            let client = &client;
+            // FIXME: Find a method to send request concurrently
+            // It seems reqwest doesn't support concurrent call for Client. If any Future fails, all futures before synchronization point will fail.
+            let response = client
+                .get(&item.url)
+                .timeout(Duration::from_secs_f64(
+                    keep_alive_config.interval as f64 / count as f64,
+                ))
+                .send();
+            futures.push((item, response));
+        }
+
+        for (item, future) in futures {
+            let response = future.await;
+            let status = response
+                .and_then(|x| Ok(x.status().is_success()))
+                .unwrap_or(false);
+            alive_status.update(item, status)
+        }
+
+        interval.tick().await;
+    }
 }

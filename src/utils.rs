@@ -33,7 +33,6 @@ fn get_users() -> (Vec<User>, Vec<User>) {
             (uid_min..uid_max).contains(&user.uid()) && user.shell() != nologin_path
         })
     }
-    //|| user.uid() == 0u32)
 }
 
 pub fn get_users_map() -> (HashMap<uid_t, User>, HashMap<uid_t, User>) {
