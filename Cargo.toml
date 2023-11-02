@@ -26,6 +26,7 @@ serde = { version = "1.0", features = ["derive"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 awc = "3.1.1"
+# mimalloc = "*"
 
 [profile.release]
 lto = true
@@ -33,8 +34,8 @@ strip = true
 codegen-units = 1
 
 [package.metadata.deb]
-maintainer = "***REMOVED***"
-copyright = "2022, ***REMOVED***"
+maintainer = "higersky <64680426+higersky@users.noreply.github.com>"
+copyright = "2022, higersky <64680426+higersky@users.noreply.github.com>"
 extended-description = """A prometheus client which exposes real-time metrics of nvidia cards and disk usages."""
 depends = "prometheus-node-exporter"
 section = "utility"
