@@ -2,6 +2,7 @@ mod metrics;
 mod nvml_metrics;
 mod utils;
 
+use actix_web::http::header::ContentEncoding;
 use actix_web::http::{StatusCode, Uri};
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -13,7 +14,7 @@ use std::str::FromStr;
 use std::sync::Mutex;
 use std::time::Duration;
 
-use actix_web::{get, web, App, HttpResponse, HttpServer};
+use actix_web::{get, middleware, web, App, HttpResponse, HttpServer};
 use prometheus_client::encoding::text::encode;
 
 use prometheus_client::registry::Registry;
@@ -110,6 +111,7 @@ fn main() -> Result<()> {
 
         HttpServer::new(move || {
             App::new()
+                .wrap(middleware::Compress::default())
                 .app_data(metrics.clone())
                 .app_data(state.clone())
                 .app_data(config.clone())
@@ -117,6 +119,7 @@ fn main() -> Result<()> {
                 .service(upstream_handler)
                 .service(metrics_handler)
                 .service(status_handler)
+                .service(speedtest_handler)
         })
         .workers(2)
         .bind(addr)?
@@ -246,7 +249,6 @@ async fn metrics_handler(
         ]
         .concat();
     }
-
     Ok(HttpResponse::Ok()
         .content_type("text/plain; version=0.0.4; charset=utf-8")
         .insert_header(("Access-Control-Allow-Origin", "*"))
@@ -283,6 +285,16 @@ async fn status_handler() -> actix_web::Result<HttpResponse> {
         .content_type("text/plain")
         .insert_header(("Access-Control-Allow-Origin", "*"))
         .body("ok"))
+}
+
+#[get("/speedtest")]
+async fn speedtest_handler() -> actix_web::Result<HttpResponse> {
+    let bytes = vec![0u8; 512 * 1024];
+    Ok(HttpResponse::Ok()
+        // .content_type("text/plain")
+        .insert_header(ContentEncoding::Identity)
+        .insert_header(("Access-Control-Allow-Origin", "*"))
+        .body(bytes))
 }
 
 fn read_keep_alive_config(args: &Args) -> Result<Option<KeepAliveConfig>, anyhow::Error> {
@@ -324,9 +336,8 @@ async fn keep_alive_worker(
     let count = keep_alive_config.item.iter().count();
 
     loop {
-        let mut futures = Vec::new();
+        let mut responses = Vec::new();
         for item in keep_alive_config.item.iter() {
-            let client = &client;
             // FIXME: Find a method to send request concurrently
             // It seems reqwest doesn't support concurrent call for Client. If any Future fails, all futures before synchronization point will fail.
             let response = client
@@ -334,12 +345,13 @@ async fn keep_alive_worker(
                 .timeout(Duration::from_secs_f64(
                     keep_alive_config.interval as f64 / count as f64,
                 ))
-                .send();
-            futures.push((item, response));
+                .send()
+                .await;
+            responses.push((item, response));
         }
 
-        for (item, future) in futures {
-            let response = future.await;
+        for (item, future) in responses {
+            let response = future;
             let status = response
                 .and_then(|x| Ok(x.status().is_success()))
                 .unwrap_or(false);

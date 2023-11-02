@@ -61,7 +61,7 @@ impl NvmlMetricsCollector {
         let version = nvml.sys_driver_version()?;
         let device_count = nvml.device_count()?;
         let mut devices = Vec::new();
-        let mut users_utilization = Vec::new();
+        let mut users_utilization = Vec::with_capacity(8);
         for index in 0..device_count {
             let device = nvml.device_by_index(index)?;
             let uuid = device.uuid()?;
