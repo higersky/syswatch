@@ -10,16 +10,6 @@ use anyhow::Result;
 
 use prometheus_client::metrics::gauge::Gauge;
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
-pub struct UnameLabel {
-    pub domainname: String,
-    pub machine: String,
-    pub nodename: String,
-    pub osname: String,
-    pub release: String,
-    pub sysname: String,
-    pub version: String,
-}
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
 pub struct DeviceLabel {
@@ -70,6 +60,7 @@ pub struct KeepAliveItem {
 
 #[derive(Default)]
 pub struct Metrics {
+    pub nvml_status: Gauge,
     pub version: Family<VersionLabel, Gauge>,
     pub device_info: Family<DeviceLabel, Gauge>,
     pub fan_speed: Family<DeviceMinorLabel, Gauge>,
@@ -110,7 +101,10 @@ impl Metrics {
     pub fn update(&self, collector: &mut NvmlMetricsCollector) -> Result<()> {
         let state = collector
             .now()
-            .with_context(|| "Failed to update metrics")?;
+            .with_context(|| {
+                self.nvml_status.set(0);
+                "Failed to update metrics"
+            })?;
 
         self.update_nvml_version(state.version);
 
@@ -138,7 +132,8 @@ impl Metrics {
                 })
                 .set(cnt);
         }
-
+        
+        self.nvml_status.set(1);
         Ok(())
     }
 

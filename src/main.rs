@@ -135,7 +135,11 @@ fn build_registry(
     alive_status: &web::Data<metrics::AliveStatus>,
 ) -> Registry {
     let mut registry = Registry::default();
-
+    registry.register(
+        "node_nvidia_driver_status", 
+        "NVML is funcitonal",
+        metrics.nvml_status.clone() 
+    );
     registry.register(
         "node_nvidia_driver_version",
         "Driver version of NVIDIA Driver",
