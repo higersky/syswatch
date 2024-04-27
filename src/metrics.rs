@@ -80,7 +80,6 @@ pub struct Metrics {
     pub utilization_gpu: Family<DeviceMinorLabel, Gauge<f64, AtomicU64>>,
     pub utilization_memory: Family<DeviceMinorLabel, Gauge<f64, AtomicU64>>,
     pub users_used_memory: Family<UserLabel, Gauge>,
-    pub users_used_disk: Family<UserNameLabel, Gauge>,
     pub users_used_cards: Family<UserNameLabel, Gauge>,
 }
 
@@ -94,6 +93,20 @@ impl Metrics {
         Default::default()
     }
 
+    pub fn clear(&self) {
+        self.version.clear();
+        self.device_info.clear();
+        self.fan_speed.clear();
+        self.memory_total.clear();
+        self.memory_used.clear();
+        self.power_usage.clear();
+        self.temperature.clear();
+        self.utilization_gpu.clear();
+        self.utilization_memory.clear();
+        self.users_used_memory.clear();
+        self.users_used_cards.clear();
+    }
+
     pub fn update(&self, collector: &mut NvmlMetricsCollector) -> Result<()> {
         let state = collector
             .now()
@@ -104,8 +117,6 @@ impl Metrics {
         for device in state.devices {
             self.update_nvml_device(device);
         }
-
-        self.update_home_size();
 
         self.users_used_memory.clear();
         let mut count = HashMap::new();
@@ -143,27 +154,6 @@ impl Metrics {
 
     fn update_nvml_version(&self, version: String) {
         self.version.get_or_create(&VersionLabel { version }).set(1);
-    }
-
-    fn update_home_size(&self) {
-        let home_usage = std::fs::read_to_string("/var/log/home-size.log");
-        if let Ok(home_usage) = home_usage {
-            for usage in home_usage.split('\n') {
-                let mut parsed = usage.split(':');
-                let user_name = parsed.next();
-                let size_mb = parsed.next().and_then(|x| x.parse::<i64>().ok());
-                match (user_name, size_mb) {
-                    (Some(user_name), Some(size_mb)) => {
-                        self.users_used_disk
-                            .get_or_create(&UserNameLabel {
-                                user_name: user_name.into(),
-                            })
-                            .set(size_mb * 1024 * 1024);
-                    }
-                    _ => continue,
-                }
-            }
-        }
     }
 
     fn update_nvml_device(&self, device: NvmlDevice) {

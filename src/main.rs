@@ -3,7 +3,7 @@ mod nvml_metrics;
 mod utils;
 
 use actix_web::http::header::ContentEncoding;
-use actix_web::http::{StatusCode, Uri};
+use actix_web::http::Uri;
 use anyhow::{Context, Result};
 use clap::Parser;
 // use env_logger::Env;
@@ -192,11 +192,6 @@ fn build_registry(
         metrics.users_used_cards.clone(),
     );
     registry.register(
-        "node_home_folder_size_bytes",
-        "Folder size in bytes of a user's home directory",
-        metrics.users_used_disk.clone(),
-    );
-    registry.register(
         "node_alive_status",
         "Alive status of machine",
         alive_status.alive_status.clone(),
@@ -224,9 +219,11 @@ async fn metrics_handler(
 
     let mut body: Vec<u8> = {
         let mut state = state.lock().unwrap();
-        metrics
-            .update(&mut state.collector)
-            .http_error("metric update failed", StatusCode::INTERNAL_SERVER_ERROR)?;
+        if let Err(e) = metrics.update(&mut state.collector) {
+            eprintln!("Metric update failed: {}", e);
+            metrics.clear();
+        }
+        // .http_error("metric update failed", StatusCode::INTERNAL_SERVER_ERROR)?;
         let mut body: String = String::new();
         encode(&mut body, &state.registry).unwrap();
         body.into_bytes()
@@ -333,7 +330,7 @@ async fn keep_alive_worker(
     let mut interval =
         actix_web::rt::time::interval(Duration::from_secs(keep_alive_config.interval));
     let client = Client::new();
-    let count = keep_alive_config.item.iter().count();
+    let count = keep_alive_config.item.len();
 
     loop {
         let mut responses = Vec::new();
@@ -352,9 +349,7 @@ async fn keep_alive_worker(
 
         for (item, future) in responses {
             let response = future;
-            let status = response
-                .and_then(|x| Ok(x.status().is_success()))
-                .unwrap_or(false);
+            let status = response.map(|x| x.status().is_success()).unwrap_or(false);
             alive_status.update(item, status)
         }
 

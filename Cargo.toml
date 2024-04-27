@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0"
-nvml-wrapper = { version = "0.9", features = ["legacy-functions"] }
+nvml-wrapper = { version = "0.10", features = ["legacy-functions"] }
 # sysinfo = "0.28"
 thiserror = "1.0"
 clap = { version = "4.2.1", features = ["derive"] }
@@ -15,17 +15,17 @@ users = "0.11"
 whitespace-conf = "1.0"
 humansize = "2.1"
 #libc = "0.2.141"
-procfs = "0.15"
-env_logger = "0.10"
+procfs = "0.16"
+env_logger = "0.11"
 actix-web = "4"
-prometheus-client = "0.20"
+prometheus-client = "0.22"
 platform-info = "1.0.2"
 tokio = { version = "1", features = ["full"]}
-toml = "0.7.3"
+toml = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
-awc = "3.1.1"
+awc = "3.4"
 # mimalloc = "*"
 
 [profile.release]
@@ -36,7 +36,7 @@ codegen-units = 1
 [package.metadata.deb]
 maintainer = "higersky <64680426+higersky@users.noreply.github.com>"
 copyright = "2022, higersky <64680426+higersky@users.noreply.github.com>"
-extended-description = """A prometheus client which exposes real-time metrics of nvidia cards and disk usages."""
+extended-description = """A prometheus client which exposes real-time metrics of nvidia cards and watches other servers' status"""
 depends = "prometheus-node-exporter"
 section = "utility"
 priority = "optional"

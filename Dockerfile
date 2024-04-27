@@ -3,7 +3,7 @@ FROM ubuntu:bionic
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
     PATH=/usr/local/cargo/bin:$PATH \
-    RUST_VERSION=1.71.1
+    RUST_VERSION=1.77.1
 
 RUN set -eux; \
     apt-get update; \
